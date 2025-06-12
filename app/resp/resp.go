@@ -203,8 +203,6 @@ func ParseValue(data Value) ([]byte, error) {
 				}
 				buf = append(buf, value...)
 			}
-			buf = append(buf, '\r')
-			buf = append(buf, '\n')
 			return buf, nil
 		}
 	case RESPTypeBulkString:
