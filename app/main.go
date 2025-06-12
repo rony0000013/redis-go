@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +23,35 @@ var (
 )
 
 func main() {
+	dir_flag := flag.String("dir", "", "Directory to store data")
+	dbfilename_flag := flag.String("dbfilename", "", "File to store data")
+	flag.Parse()
+
+	if *dir_flag != "" {
+		err := os.MkdirAll(*dir_flag, 0755)
+		if err != nil {
+			fmt.Println("Failed to create directory: ", err.Error())
+			os.Exit(1)
+		}
+		config["dir"] = *dir_flag
+	}
+	if *dbfilename_flag != "" {
+		filePath := filepath.Join(*dir_flag, *dbfilename_flag)
+		err := os.MkdirAll(filepath.Dir(filePath), 0755)
+		if err != nil {
+			fmt.Println("Failed to create directory: ", err.Error())
+			os.Exit(1)
+		}
+		config["dbfilename"] = *dbfilename_flag
+	}
+
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
-	// stopCh := make(chan struct{})
-	// go startExpiryChecker(stopCh)
+	stopCh := make(chan struct{})
+	go startExpiryChecker(stopCh)
 
 	fmt.Println("Server started on port 6379")
 	for {
@@ -97,6 +121,8 @@ func handle(conn net.Conn) {
 			methods.Set(commands, conn, &mu, store, expiryMap)
 		case "GET":
 			methods.Get(commands, conn, &mu, store, expiryMap)
+		case "CONFIG":
+			methods.HandleConfig(commands, conn, &mu, config)
 		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}

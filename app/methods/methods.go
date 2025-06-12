@@ -140,3 +140,59 @@ func Get(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]St
 		}
 	}
 }
+
+func HandleConfig(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+	if len(commands.Array) < 2 {
+		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
+		return
+	}
+	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
+		conn.Write([]byte("-ERR config key must be a string\r\n"))
+		return
+	}
+	key := commands.Array[1].String
+	switch strings.ToUpper(key) {
+	case "GET":
+		ConfigGet(commands, conn, mu, config)
+	case "SET":
+		ConfigSet(commands, conn, mu, config)
+	default:
+		conn.Write([]byte("-ERR unknown config command\r\n"))
+	}
+}
+
+func ConfigGet(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+	if len(commands.Array) < 2 {
+		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
+		return
+	}
+	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
+		conn.Write([]byte("-ERR config key must be a string\r\n"))
+		return
+	}
+	key := commands.Array[2].String
+	mu.Lock()
+	if val, exists := config[key]; exists {
+		conn.Write(resp.ToBulkString(val))
+	} else {
+		conn.Write(resp.ToBulkString(""))
+	}
+	mu.Unlock()
+}
+
+func ConfigSet(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+	if len(commands.Array) < 3 {
+		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
+		return
+	}
+	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString && commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
+		conn.Write([]byte("-ERR config key and value must be a string\r\n"))
+		return
+	}
+	key := commands.Array[2].String
+	value := commands.Array[3].String
+	mu.Lock()
+	config[key] = value
+	mu.Unlock()
+	conn.Write(resp.ToBulkString("OK"))
+}
