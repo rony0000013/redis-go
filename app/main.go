@@ -130,7 +130,7 @@ func handle(conn net.Conn) {
 					conn.Write([]byte("-ERR set expiration type must be a string\r\n"))
 					continue
 				}
-				fmt.Printf("SET %q %q %q\n", key, commands.Array[3].String, commands.Array[4].String)
+
 				if commands.Array[4].Type != resp.RESPTypeInteger && commands.Array[4].Type != resp.RESPTypeBulkString && commands.Array[4].Type != resp.RESPTypeSimpleString {
 					conn.Write([]byte("-ERR set expiration value must be an integer\r\n"))
 					continue
@@ -162,7 +162,7 @@ func handle(conn net.Conn) {
 				continue
 			}
 
-			fmt.Printf("SET %q %q %v\n", key, value, expiration)
+			// fmt.Printf("SET %q %q %v\n", key, value, expiration)
 			mu.Lock()
 			if val, exists := store[key]; exists {
 				if val.expireAt != nullTimeStamp {
@@ -191,8 +191,8 @@ func handle(conn net.Conn) {
 
 			mu.Lock()
 			if val, exists := store[key]; exists {
-				fmt.Printf("GET %q %q %v\n", key, val.value, val.expireAt)
-				if val.expireAt.Before(time.Now()) {
+				// fmt.Printf("GET %q %q %v\n", key, val.value, val.expireAt)
+				if val.expireAt != nullTimeStamp && val.expireAt.Before(time.Now()) {
 					delete(expiryMap, val.expireAt)
 					delete(store, key)
 					mu.Unlock()
