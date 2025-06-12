@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -14,6 +15,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Println("Server started on port 6379")
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -26,9 +28,10 @@ func main() {
 
 func handle(conn net.Conn) {
 	defer conn.Close()
+	fmt.Println("Client connected: ", conn.RemoteAddr().String())
 	buf := make([]byte, 1024)
 	for {
-		_, err := conn.Read(buf)
+		len, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -36,6 +39,11 @@ func handle(conn net.Conn) {
 			fmt.Println("Error reading from connection:", err.Error())
 			break
 		}
-		conn.Write([]byte("+PONG\r\n"))
+		command := string(buf[8 : len-2])
+		if command == "PING" || command == "ping" {
+			conn.Write([]byte("+PONG\r\n"))
+		} else if strings.HasPrefix(command, "ECHO") || strings.HasPrefix(command, "echo") {
+			conn.Write([]byte("+" + command[5:] + "\r\n"))
+		}
 	}
 }
