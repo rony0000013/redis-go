@@ -5,15 +5,23 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 )
 
+type storeValue struct {
+	value    []byte
+	expireAt time.Time // Zero time means no expiration
+}
+
 var (
-	mu    sync.Mutex
-	store = make(map[string][]byte)
+	mu        sync.Mutex
+	store     = make(map[string]storeValue)
+	expiryMap = make(map[time.Time]string)
 )
 
 func main() {
@@ -22,6 +30,8 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
+	// stopCh := make(chan struct{})
+	// go startExpiryChecker(stopCh)
 
 	fmt.Println("Server started on port 6379")
 	for {
@@ -37,6 +47,9 @@ func main() {
 func handle(conn net.Conn) {
 	defer conn.Close()
 	fmt.Println("Client connected: ", conn.RemoteAddr().String())
+
+	nullTimeStamp := time.Time{}
+
 	buf := make([]byte, 1024)
 	for {
 		n, err := conn.Read(buf)
@@ -46,6 +59,7 @@ func handle(conn net.Conn) {
 			}
 			break
 		}
+		// fmt.Printf("Command: %q\n", string(buf[:n]))
 		commands, rest, err := resp.Parse(buf[:n])
 		if err != nil {
 			fmt.Println("ERR: parsing RESP:", err.Error())
@@ -73,7 +87,7 @@ func handle(conn net.Conn) {
 			continue
 		}
 
-		// fmt.Printf("Command: %q ", command.String)
+		// fmt.Printf("Command: ")
 		// for _, value := range commands.Array {
 		// 	fmt.Printf("%q ", value.String)
 		// }
@@ -108,19 +122,60 @@ func handle(conn net.Conn) {
 				conn.Write([]byte("-ERR set value must be a string\r\n"))
 				continue
 			}
-			key, err := resp.ParseValue(commands.Array[1])
-			if err != nil {
-				conn.Write([]byte("-ERR Err parsing set key: " + err.Error() + "\r\n"))
-				continue
+			key := commands.Array[1].String
+
+			expiration := time.Duration(0)
+			if len(commands.Array) == 5 {
+				if commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
+					conn.Write([]byte("-ERR set expiration type must be a string\r\n"))
+					continue
+				}
+				fmt.Printf("SET %q %q %q\n", key, commands.Array[3].String, commands.Array[4].String)
+				if commands.Array[4].Type != resp.RESPTypeInteger && commands.Array[4].Type != resp.RESPTypeBulkString && commands.Array[4].Type != resp.RESPTypeSimpleString {
+					conn.Write([]byte("-ERR set expiration value must be an integer\r\n"))
+					continue
+				}
+				expirationValue := 0
+				if commands.Array[4].Type == resp.RESPTypeInteger {
+					expirationValue = commands.Array[4].Integer
+				} else {
+					eval, err := strconv.Atoi(commands.Array[4].String)
+					if err != nil {
+						conn.Write([]byte("-ERR set expiration value must be an integer\r\n"))
+						continue
+					}
+					expirationValue = eval
+				}
+				if strings.ToUpper(commands.Array[3].String) == "EX" {
+					expiration = time.Second * time.Duration(expirationValue)
+				} else if strings.ToUpper(commands.Array[3].String) == "PX" {
+					expiration = time.Millisecond * time.Duration(expirationValue)
+				} else {
+					conn.Write([]byte("-ERR set expiration type must be 'EX' or 'PX'\r\n"))
+					continue
+				}
 			}
+
 			value, err := resp.ParseValue(commands.Array[2])
 			if err != nil {
 				conn.Write([]byte("-ERR Err parsing set value: " + err.Error() + "\r\n"))
 				continue
 			}
 
+			fmt.Printf("SET %q %q %v\n", key, value, expiration)
 			mu.Lock()
-			store[string(key)] = value
+			if val, exists := store[key]; exists {
+				if val.expireAt != nullTimeStamp {
+					delete(expiryMap, val.expireAt)
+				}
+			}
+			if expiration > 0 {
+				timeStamp := time.Now().Add(expiration)
+				store[key] = storeValue{value: value, expireAt: timeStamp}
+				expiryMap[timeStamp] = key
+			} else {
+				store[key] = storeValue{value: value, expireAt: nullTimeStamp}
+			}
 			mu.Unlock()
 			conn.Write(resp.ToSimpleString("OK"))
 		} else if strings.ToUpper(command.String) == "GET" {
@@ -132,19 +187,51 @@ func handle(conn net.Conn) {
 				conn.Write([]byte("-ERR get key must be a string\r\n"))
 				continue
 			}
-			key, err := resp.ParseValue(commands.Array[1])
-			if err != nil {
-				conn.Write([]byte("-ERR Err parsing get key: " + err.Error() + "\r\n"))
-				continue
-			}
+			key := commands.Array[1].String
 
 			mu.Lock()
-			value := store[string(key)]
-			mu.Unlock()
-			fmt.Printf("GET %q %q\n", string(key), string(value))
-			conn.Write(value)
+			if val, exists := store[key]; exists {
+				fmt.Printf("GET %q %q %v\n", key, val.value, val.expireAt)
+				if val.expireAt.Before(time.Now()) {
+					delete(expiryMap, val.expireAt)
+					delete(store, key)
+					mu.Unlock()
+					conn.Write(resp.ToBulkString(""))
+					continue
+				}
+				value := val.value
+				mu.Unlock()
+				conn.Write(value)
+			} else {
+				mu.Unlock()
+				conn.Write(resp.ToBulkString(""))
+			}
 		} else {
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
 	}
 }
+
+// func startExpiryChecker(stopCh <-chan struct{}) {
+// 	ticker := time.NewTicker(1 * time.Second) // Check every second
+// 	defer ticker.Stop()
+
+// 	for {
+// 		select {
+// 		case now := <-ticker.C:
+// 			mu.Lock()
+// 			for timestamp, key := range expiryMap {
+// 				if now.After(timestamp) {
+// 					if val, exists := store[key]; exists && val.expireAt == timestamp {
+// 						delete(store, key)
+// 					}
+
+// 					delete(expiryMap, timestamp)
+// 				}
+// 			}
+// 			mu.Unlock()
+// 		case <-stopCh:
+// 			return // Exit the goroutine when stopCh is closed
+// 		}
+// 	}
+// }
