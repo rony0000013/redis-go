@@ -6,8 +6,14 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
+)
+
+var (
+	mu    sync.Mutex
+	store = make(map[string][]byte)
 )
 
 func main() {
@@ -89,31 +95,54 @@ func handle(conn net.Conn) {
 				continue
 			}
 			conn.Write(value)
-			// } else if strings.ToUpper(command.String) == "SET" {
-			// 	if len(commands.Array) < 3 {
-			// 		conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
-			// 		continue
-			// 	}
-			// 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-			// 		conn.Write([]byte("-ERR set key must be a string\r\n"))
-			// 		continue
-			// 	}
-			// 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
-			// 		conn.Write([]byte("-ERR set value must be a string\r\n"))
-			// 		continue
-			// 	}
-			// 	key, err := resp.ParseValue(commands.Array[1])
-			// 	if err != nil {
-			// 		conn.Write([]byte("-ERR Err parsing set key: " + err.Error() + "\r\n"))
-			// 		continue
-			// 	}
-			// 	value, err := resp.ParseValue(commands.Array[2])
-			// 	if err != nil {
-			// 		conn.Write([]byte("-ERR Err parsing set value: " + err.Error() + "\r\n"))
-			// 		continue
-			// 	}
-			// 	fmt.Printf("SET %q %q\n", string(key), string(value))
-			// 	conn.Write(resp.ToSimpleString("OK"))
+		} else if strings.ToUpper(command.String) == "SET" {
+			if len(commands.Array) < 3 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+				continue
+			}
+			if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
+				conn.Write([]byte("-ERR set key must be a string\r\n"))
+				continue
+			}
+			if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
+				conn.Write([]byte("-ERR set value must be a string\r\n"))
+				continue
+			}
+			key, err := resp.ParseValue(commands.Array[1])
+			if err != nil {
+				conn.Write([]byte("-ERR Err parsing set key: " + err.Error() + "\r\n"))
+				continue
+			}
+			value, err := resp.ParseValue(commands.Array[2])
+			if err != nil {
+				conn.Write([]byte("-ERR Err parsing set value: " + err.Error() + "\r\n"))
+				continue
+			}
+
+			mu.Lock()
+			store[string(key)] = value
+			mu.Unlock()
+			conn.Write(resp.ToSimpleString("OK"))
+		} else if strings.ToUpper(command.String) == "GET" {
+			if len(commands.Array) < 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+				continue
+			}
+			if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
+				conn.Write([]byte("-ERR get key must be a string\r\n"))
+				continue
+			}
+			key, err := resp.ParseValue(commands.Array[1])
+			if err != nil {
+				conn.Write([]byte("-ERR Err parsing get key: " + err.Error() + "\r\n"))
+				continue
+			}
+
+			mu.Lock()
+			value := store[string(key)]
+			mu.Unlock()
+			fmt.Printf("GET %q %q\n", string(key), string(value))
+			conn.Write(value)
 		} else {
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
