@@ -73,7 +73,7 @@ func handle(conn net.Conn) {
 		// }
 		// fmt.Println()
 		if strings.ToUpper(command.String) == "PING" || strings.ToUpper(command.String) == "INFO" {
-			conn.Write([]byte("+PONG\r\n"))
+			conn.Write(resp.ToSimpleString("PONG"))
 		} else if strings.ToUpper(command.String) == "ECHO" {
 			if len(commands.Array) < 2 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
@@ -89,6 +89,31 @@ func handle(conn net.Conn) {
 				continue
 			}
 			conn.Write(value)
+			// } else if strings.ToUpper(command.String) == "SET" {
+			// 	if len(commands.Array) < 3 {
+			// 		conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+			// 		continue
+			// 	}
+			// 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
+			// 		conn.Write([]byte("-ERR set key must be a string\r\n"))
+			// 		continue
+			// 	}
+			// 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
+			// 		conn.Write([]byte("-ERR set value must be a string\r\n"))
+			// 		continue
+			// 	}
+			// 	key, err := resp.ParseValue(commands.Array[1])
+			// 	if err != nil {
+			// 		conn.Write([]byte("-ERR Err parsing set key: " + err.Error() + "\r\n"))
+			// 		continue
+			// 	}
+			// 	value, err := resp.ParseValue(commands.Array[2])
+			// 	if err != nil {
+			// 		conn.Write([]byte("-ERR Err parsing set value: " + err.Error() + "\r\n"))
+			// 		continue
+			// 	}
+			// 	fmt.Printf("SET %q %q\n", string(key), string(value))
+			// 	conn.Write(resp.ToSimpleString("OK"))
 		} else {
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
