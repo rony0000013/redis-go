@@ -1,7 +1,6 @@
 package methods
 
 import (
-	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,48 +16,40 @@ type StoreValue struct {
 
 var nullTimeStamp = time.Time{}
 
-func Echo(commands resp.Value, conn net.Conn) {
+func Echo(commands resp.Value) []byte {
 	if len(commands.Array) < 2 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'echo' command\r\n")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR echo value must be a string\r\n"))
-		return
+		return []byte("-ERR echo value must be a string\r\n")
 	}
 	value, err := resp.ParseValue(commands.Array[1])
 	if err != nil {
-		conn.Write([]byte("-ERR Err parsing echo value: " + err.Error() + "\r\n"))
-		return
+		return []byte("-ERR Err parsing echo value: " + err.Error() + "\r\n")
 	}
-	conn.Write(value)
+	return value
 }
 
-func Set(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) {
+func Set(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) []byte {
 	if len(commands.Array) < 3 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'set' command\r\n")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR set key must be a string\r\n"))
-		return
+		return []byte("-ERR set key must be a string\r\n")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR set value must be a string\r\n"))
-		return
+		return []byte("-ERR set value must be a string\r\n")
 	}
 	key := commands.Array[1].String
 
 	expiration := time.Duration(0)
 	if len(commands.Array) == 5 {
 		if commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
-			conn.Write([]byte("-ERR set expiration type must be a string\r\n"))
-			return
+			return []byte("-ERR set expiration type must be a string\r\n")
 		}
 
 		if commands.Array[4].Type != resp.RESPTypeInteger && commands.Array[4].Type != resp.RESPTypeBulkString && commands.Array[4].Type != resp.RESPTypeSimpleString {
-			conn.Write([]byte("-ERR set expiration value must be an integer\r\n"))
-			return
+			return []byte("-ERR set expiration value must be an integer\r\n")
 		}
 		expirationValue := 0
 		if commands.Array[4].Type == resp.RESPTypeInteger {
@@ -66,8 +57,7 @@ func Set(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]St
 		} else {
 			eval, err := strconv.Atoi(commands.Array[4].String)
 			if err != nil {
-				conn.Write([]byte("-ERR set expiration value must be an integer\r\n"))
-				return
+				return []byte("-ERR set expiration value must be an integer\r\n")
 			}
 			expirationValue = eval
 		}
@@ -76,15 +66,13 @@ func Set(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]St
 		} else if strings.ToUpper(commands.Array[3].String) == "PX" {
 			expiration = time.Millisecond * time.Duration(expirationValue)
 		} else {
-			conn.Write([]byte("-ERR set expiration type must be 'EX' or 'PX'\r\n"))
-			return
+			return []byte("-ERR set expiration type must be 'EX' or 'PX'\r\n")
 		}
 	}
 
 	value, err := resp.ParseValue(commands.Array[2])
 	if err != nil {
-		conn.Write([]byte("-ERR Err parsing set value: " + err.Error() + "\r\n"))
-		return
+		return []byte("-ERR Err parsing set value: " + err.Error() + "\r\n")
 	}
 
 	// fmt.Printf("SET %q %q %v\n", key, value, expiration)
@@ -102,97 +90,83 @@ func Set(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]St
 		store[key] = StoreValue{Value: value, ExpireAt: nullTimeStamp}
 	}
 	mu.Unlock()
-	conn.Write(resp.ToSimpleString("OK"))
+	return resp.ToSimpleString("OK")
 }
 
-func Get(commands resp.Value, conn net.Conn, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) {
+func Get(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) []byte {
 	if len(commands.Array) < 2 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'get' command\r\n")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		if len(commands.Array) < 2 {
-			conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
-			return
-		}
-		if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-			conn.Write([]byte("-ERR get key must be a string\r\n"))
-			return
-		}
-		key := commands.Array[1].String
+		return []byte("-ERR get key must be a string\r\n")
+	}
+	key := commands.Array[1].String
 
-		mu.Lock()
-		if val, exists := store[key]; exists {
-			// fmt.Printf("GET %q %q %v\n", key, val.Value, val.ExpireAt)
-			if val.ExpireAt != nullTimeStamp && val.ExpireAt.Before(time.Now()) {
-				delete(expiryMap, val.ExpireAt)
-				delete(store, key)
-				mu.Unlock()
-				conn.Write(resp.ToBulkString(""))
-				return
-			}
-			value := val.Value
+	mu.Lock()
+	if val, exists := store[key]; exists {
+		// fmt.Printf("GET %q %q %v\n", key, val.Value, val.ExpireAt)
+		if val.ExpireAt != nullTimeStamp && val.ExpireAt.Before(time.Now()) {
+			delete(expiryMap, val.ExpireAt)
+			delete(store, key)
 			mu.Unlock()
-			conn.Write(value)
-		} else {
-			mu.Unlock()
-			conn.Write(resp.ToBulkString(""))
+			return resp.ToBulkString("")
 		}
+		value := val.Value
+		mu.Unlock()
+		return value
+	} else {
+		mu.Unlock()
+		return resp.ToBulkString("")
 	}
 }
 
-func HandleConfig(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+func HandleConfig(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
 	if len(commands.Array) < 2 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR config key must be a string\r\n"))
-		return
+		return []byte("-ERR config key must be a string\r\n")
 	}
 	key := commands.Array[1].String
 	switch strings.ToUpper(key) {
 	case "GET":
-		ConfigGet(commands, conn, mu, config)
+		return ConfigGet(commands, mu, config)
 	case "SET":
-		ConfigSet(commands, conn, mu, config)
+		return ConfigSet(commands, mu, config)
 	default:
-		conn.Write([]byte("-ERR unknown config command\r\n"))
+		return []byte("-ERR unknown config command\r\n")
 	}
 }
 
-func ConfigGet(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+func ConfigGet(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
 	if len(commands.Array) < 2 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR config key must be a string\r\n"))
-		return
+		return []byte("-ERR config key must be a string\r\n")
 	}
 	key := commands.Array[2].String
 	mu.Lock()
 	if val, exists := config[key]; exists {
-		conn.Write(resp.ToArray([]any{key, val}))
+		mu.Unlock()
+		return resp.ToArray([]any{key, val})
 	} else {
-		conn.Write(resp.ToBulkString(""))
+		mu.Unlock()
+		return resp.ToBulkString("")
 	}
-	mu.Unlock()
 }
 
-func ConfigSet(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[string]string) {
+func ConfigSet(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
 	if len(commands.Array) < 3 {
-		conn.Write([]byte("-ERR wrong number of arguments for 'config' command\r\n"))
-		return
+		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString && commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
-		conn.Write([]byte("-ERR config key and value must be a string\r\n"))
-		return
+		return []byte("-ERR config key and value must be a string\r\n")
 	}
 	key := commands.Array[2].String
 	value := commands.Array[3].String
 	mu.Lock()
 	config[key] = value
 	mu.Unlock()
-	conn.Write(resp.ToBulkString("OK"))
+	return resp.ToBulkString("OK")
 }

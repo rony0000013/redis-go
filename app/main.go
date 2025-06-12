@@ -17,9 +17,9 @@ import (
 
 var (
 	mu        sync.Mutex
-	store     = make(map[string]methods.StoreValue)
-	config    = make(map[string]string)
-	expiryMap = make(map[time.Time]string)
+	Store     = make(map[string]methods.StoreValue)
+	Config    = make(map[string]string)
+	ExpiryMap = make(map[time.Time]string)
 )
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 			fmt.Println("Failed to create directory: ", err.Error())
 			os.Exit(1)
 		}
-		config["dir"] = *dir_flag
+		Config["dir"] = *dir_flag
 	}
 	if *dbfilename_flag != "" {
 		filePath := filepath.Join(*dir_flag, *dbfilename_flag)
@@ -42,7 +42,7 @@ func main() {
 			fmt.Println("Failed to create directory: ", err.Error())
 			os.Exit(1)
 		}
-		config["dbfilename"] = *dbfilename_flag
+		Config["dbfilename"] = *dbfilename_flag
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -116,13 +116,13 @@ func handle(conn net.Conn) {
 		case "INFO":
 			conn.Write(resp.ToSimpleString("PONG"))
 		case "ECHO":
-			methods.Echo(commands, conn)
+			conn.Write(methods.Echo(commands))
 		case "SET":
-			methods.Set(commands, conn, &mu, store, expiryMap)
+			conn.Write(methods.Set(commands, &mu, Store, ExpiryMap))
 		case "GET":
-			methods.Get(commands, conn, &mu, store, expiryMap)
+			conn.Write(methods.Get(commands, &mu, Store, ExpiryMap))
 		case "CONFIG":
-			methods.HandleConfig(commands, conn, &mu, config)
+			conn.Write(methods.HandleConfig(commands, &mu, Config))
 		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
@@ -137,13 +137,13 @@ func startExpiryChecker(stopCh <-chan struct{}) {
 		select {
 		case now := <-ticker.C:
 			mu.Lock()
-			for timestamp, key := range expiryMap {
+			for timestamp, key := range ExpiryMap {
 				if now.After(timestamp) {
-					if val, exists := store[key]; exists && val.ExpireAt == timestamp {
-						delete(store, key)
+					if val, exists := Store[key]; exists && val.ExpireAt == timestamp {
+						delete(Store, key)
 					}
 
-					delete(expiryMap, timestamp)
+					delete(ExpiryMap, timestamp)
 				}
 			}
 			mu.Unlock()
