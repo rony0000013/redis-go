@@ -173,7 +173,7 @@ func ConfigGet(commands resp.Value, conn net.Conn, mu *sync.Mutex, config map[st
 	key := commands.Array[2].String
 	mu.Lock()
 	if val, exists := config[key]; exists {
-		conn.Write(resp.ToBulkString(val))
+		conn.Write(resp.ToArray([]any{key, val}))
 	} else {
 		conn.Write(resp.ToBulkString(""))
 	}

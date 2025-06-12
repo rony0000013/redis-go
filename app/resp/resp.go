@@ -298,3 +298,34 @@ func ToBigNumber(value int64) []byte {
 	buf = append(buf, '\n')
 	return buf
 }
+
+func ToArray(value []any) []byte {
+	var buf []byte
+	buf = append(buf, '*')
+	buf = append(buf, []byte(strconv.Itoa(len(value)))...)
+	buf = append(buf, '\r')
+	buf = append(buf, '\n')
+	for _, value := range value {
+		switch v := value.(type) {
+		case string:
+			str := ToBulkString(v)
+			buf = append(buf, str...)
+		case int:
+			integer := ToInteger(v)
+			buf = append(buf, integer...)
+		case bool:
+			boolean := ToBoolean(v)
+			buf = append(buf, boolean...)
+		case float64:
+			double := ToDouble(v)
+			buf = append(buf, double...)
+		case int64:
+			bigNumber := ToBigNumber(v)
+			buf = append(buf, bigNumber...)
+		default:
+			str := ToBulkString(v.(string))
+			buf = append(buf, str...)
+		}
+	}
+	return buf
+}
