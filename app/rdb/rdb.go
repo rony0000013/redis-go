@@ -203,6 +203,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	}
 
 	filePath := filepath.Join(dir, dbfilename)
+	fmt.Printf("Opening file: %v\n", filePath)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return nil, nil, fmt.Errorf("file does not exist: %v", filePath)
 	}
@@ -216,6 +217,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file: %v", err)
 	}
+	fmt.Printf("File bytes: % X\n", fileBytes)
 
 	if len(fileBytes) < 8 {
 		return nil, nil, fmt.Errorf("file is too small: % X", fileBytes)
