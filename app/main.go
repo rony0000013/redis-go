@@ -48,7 +48,7 @@ func main() {
 		Config["dbfilename"] = *dbfilename_flag
 	}
 
-	metadata, databases, err := rdb.Open(*dir_flag, *dbfilename_flag)
+	metadata, databases, err := rdb.Open(Config["dir"], Config["dbfilename"])
 	if err != nil {
 		fmt.Println("Failed to open database: ", err.Error())
 		Databases[DatabaseID] = resp.NewDatabase(DatabaseID)
@@ -71,16 +71,16 @@ func main() {
 	fmt.Println("Server started on port 6379")
 
 	// Start a goroutine to handle server shutdown
-	go func() {
-		<-stopCh
-		fmt.Println("\nShutting down server...")
-		err = rdb.Save(*dir_flag, *dbfilename_flag, Config, Databases)
-		if err != nil {
-			fmt.Println("Failed to save database: ", err.Error())
-		}
-		fmt.Println("Server stopped")
-		os.Exit(0)
-	}()
+	// go func() {
+	// 	<-stopCh
+	// 	fmt.Println("\nShutting down server...")
+	// 	err = rdb.Save(*dir_flag, *dbfilename_flag, Config, Databases)
+	// 	if err != nil {
+	// 		fmt.Println("Failed to save database: ", err.Error())
+	// 	}
+	// 	fmt.Println("Server stopped")
+	// 	os.Exit(0)
+	// }()
 
 	// Main server loop
 	for {
@@ -162,6 +162,14 @@ func handle(conn net.Conn) {
 			conn.Write(methods.Keys(commands, &mu, &db))
 		case "CONFIG":
 			conn.Write(methods.HandleConfig(commands, &mu, Config))
+		case "SAVE":
+			{
+				err = rdb.Save(Config["dir"], Config["dbfilename"], Config, Databases)
+				if err != nil {
+					conn.Write(resp.ToError("Failed to save database: " + err.Error()))
+				}
+				conn.Write(resp.ToSimpleString("OK"))
+			}
 		default:
 			conn.Write(resp.ToError("unknown command"))
 		}

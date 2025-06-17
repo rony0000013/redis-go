@@ -203,6 +203,9 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	}
 
 	filePath := filepath.Join(dir, dbfilename)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("file does not exist: %v", filePath)
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error opening file: %v", err)
