@@ -217,6 +217,10 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 		return nil, nil, fmt.Errorf("error reading file: %v", err)
 	}
 
+	if len(fileBytes) < 8 {
+		return nil, nil, fmt.Errorf("file is too small: %v", len(fileBytes))
+	}
+
 	// Checksum
 	checksum := crc64.Checksum(fileBytes[:len(fileBytes)-8], crc64.MakeTable(crc64.ECMA))
 	if checksum != binary.LittleEndian.Uint64(fileBytes[len(fileBytes)-8:]) {
