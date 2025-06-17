@@ -52,6 +52,7 @@ func main() {
 	if err != nil {
 		fmt.Println("Failed to open database: ", err.Error())
 		Databases[DatabaseID] = resp.NewDatabase(DatabaseID)
+		Databases[DatabaseID].Store["strawberry"] = resp.NewStoreValue(resp.NewBulkString("strawberry"), time.Time{})
 	} else {
 		Config = metadata
 		Databases = databases
