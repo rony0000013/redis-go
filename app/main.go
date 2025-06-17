@@ -6,20 +6,23 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/app/methods"
+	"github.com/codecrafters-io/redis-starter-go/app/rdb"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 )
 
 var (
-	mu        sync.Mutex
-	Store     = make(map[string]methods.StoreValue)
-	Config    = make(map[string]string)
-	ExpiryMap = make(map[time.Time]string)
+	mu         sync.Mutex
+	Databases        = make(map[uint8]resp.Database)
+	DatabaseID uint8 = 0
+	Config           = make(map[string]string)
 )
 
 func main() {
@@ -37,28 +40,60 @@ func main() {
 	}
 	if *dbfilename_flag != "" {
 		filePath := filepath.Join(*dir_flag, *dbfilename_flag)
-		err := os.MkdirAll(filepath.Dir(filePath), 0755)
+		_, err := os.Create(filePath)
 		if err != nil {
-			fmt.Println("Failed to create directory: ", err.Error())
+			fmt.Println("Failed to create file: ", err.Error())
 			os.Exit(1)
 		}
 		Config["dbfilename"] = *dbfilename_flag
 	}
+
+	metadata, databases, err := rdb.Open(*dir_flag, *dbfilename_flag)
+	if err != nil {
+		fmt.Println("Failed to open database: ", err.Error())
+		Databases[DatabaseID] = resp.NewDatabase(DatabaseID)
+	} else {
+		Config = metadata
+		Databases = databases
+	}
+	Config["redis-version"] = "6.0.16"
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
-	stopCh := make(chan struct{})
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
+
 	go startExpiryChecker(stopCh)
 
 	fmt.Println("Server started on port 6379")
+
+	// Start a goroutine to handle server shutdown
+	go func() {
+		<-stopCh
+		fmt.Println("\nShutting down server...")
+		err = rdb.Save(*dir_flag, *dbfilename_flag, Config, Databases)
+		if err != nil {
+			fmt.Println("Failed to save database: ", err.Error())
+		}
+		fmt.Println("Server stopped")
+		os.Exit(0)
+	}()
+
+	// Main server loop
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			continue
+			// If we received a shutdown signal, break the loop
+			select {
+			case <-stopCh:
+				return
+			default:
+				fmt.Println("Error accepting connection: ", err.Error())
+				continue
+			}
 		}
 		go handle(conn)
 	}
@@ -80,30 +115,32 @@ func handle(conn net.Conn) {
 		// fmt.Printf("Command: %q\n", string(buf[:n]))
 		commands, rest, err := resp.Parse(buf[:n])
 		if err != nil {
-			fmt.Println("ERR: parsing RESP:", err.Error())
+			conn.Write(resp.ToError("parsing RESP: " + err.Error()))
 			break
 		}
 
 		if len(rest) > 0 {
-			fmt.Printf("ERR: rest data: %q\n", string(rest))
+			conn.Write(resp.ToError("rest data: " + string(rest)))
 			continue
 		}
 		if commands.Type != resp.RESPTypeArray {
-			conn.Write([]byte("-ERR wrong command structure\r\n"))
+			conn.Write(resp.ToError("wrong command structure"))
 			continue
 		}
 
 		if len(commands.Array) == 0 {
-			conn.Write([]byte("-ERR no elements in command\r\n"))
+			conn.Write(resp.ToError("no elements in command"))
 			continue
 		}
 
 		command := commands.Array[0]
 
 		if command.Type != resp.RESPTypeSimpleString && command.Type != resp.RESPTypeBulkString {
-			conn.Write([]byte("-ERR wrong command type\r\n"))
+			conn.Write(resp.ToError("wrong command type"))
 			continue
 		}
+
+		db := Databases[DatabaseID]
 
 		// fmt.Printf("Command: ")
 		// for _, value := range commands.Array {
@@ -118,32 +155,34 @@ func handle(conn net.Conn) {
 		case "ECHO":
 			conn.Write(methods.Echo(commands))
 		case "SET":
-			conn.Write(methods.Set(commands, &mu, Store, ExpiryMap))
+			conn.Write(methods.Set(commands, &mu, &db))
 		case "GET":
-			conn.Write(methods.Get(commands, &mu, Store, ExpiryMap))
+			conn.Write(methods.Get(commands, &mu, &db))
+		case "KEYS":
+			conn.Write(methods.Keys(commands, &mu, &db))
 		case "CONFIG":
 			conn.Write(methods.HandleConfig(commands, &mu, Config))
 		default:
-			conn.Write([]byte("-ERR unknown command\r\n"))
+			conn.Write(resp.ToError("unknown command"))
 		}
 	}
 }
 
-func startExpiryChecker(stopCh <-chan struct{}) {
+func startExpiryChecker(stopCh <-chan os.Signal) {
 	ticker := time.NewTicker(1 * time.Second) // Check every second
 	defer ticker.Stop()
 
-	for {
+	for id, _ := range Databases {
 		select {
 		case now := <-ticker.C:
 			mu.Lock()
-			for timestamp, key := range ExpiryMap {
+			for timestamp, key := range Databases[id].ExpiryMap {
 				if now.After(timestamp) {
-					if val, exists := Store[key]; exists && val.ExpireAt == timestamp {
-						delete(Store, key)
+					if val, exists := Databases[id].Store[key]; exists && val.ExpireAt == timestamp {
+						delete(Databases[id].Store, key)
 					}
 
-					delete(ExpiryMap, timestamp)
+					delete(Databases[id].ExpiryMap, timestamp)
 				}
 			}
 			mu.Unlock()

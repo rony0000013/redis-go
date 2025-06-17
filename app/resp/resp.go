@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 type RESP byte
@@ -31,11 +32,66 @@ type Value struct {
 	BigNumber int64
 }
 
+type StoreValue struct {
+	Value    Value
+	ExpireAt time.Time // Zero time means no expiration
+}
+
+type Database struct {
+	ID        uint8
+	Store     map[string]StoreValue
+	ExpiryMap map[time.Time]string
+}
+
+func NewDatabase(id uint8) Database {
+	return Database{
+		ID:        id,
+		Store:     make(map[string]StoreValue),
+		ExpiryMap: make(map[time.Time]string),
+	}
+}
+
+func NewBulkString(value string) Value {
+	return Value{Type: RESPTypeBulkString, String: value}
+}
+
+func NewSimpleString(value string) Value {
+	return Value{Type: RESPTypeSimpleString, String: value}
+}
+
+func NewStoreValue(value Value, expireAt time.Time) StoreValue {
+	return StoreValue{Value: value, ExpireAt: expireAt}
+}
+
+func NewInteger(value int) Value {
+	return Value{Type: RESPTypeInteger, Integer: value}
+}
+
+func NewNull() Value {
+	return Value{Type: RESPTypeNull, IsNull: true}
+}
+
+func NewBoolean(value bool) Value {
+	return Value{Type: RESPTypeBoolean, Boolean: value}
+}
+
+func NewDouble(value float64) Value {
+	return Value{Type: RESPTypeDouble, Double: value}
+}
+
+func NewBigNumber(value int64) Value {
+	return Value{Type: RESPTypeBigNumber, BigNumber: value}
+}
+
+func NewError(value string) Value {
+	return Value{Type: RESPTypeError, String: value}
+}
+
 func Parse(data []byte) (Value, []byte, error) {
 	switch data[0] {
-	case '_': // null
+	case byte(RESPTypeNull): // null
 		return Value{Type: RESPTypeNull, IsNull: true}, []byte(nil), nil
-	case '+': // simple string
+	case byte(RESPTypeSimpleString): // simple string
 		{
 			len := bytes.IndexByte(data, '\n')
 			if len == -1 || len == 0 {
@@ -43,7 +99,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{Type: RESPTypeSimpleString, String: string(data[1 : len-1])}, data[len+1:], nil
 		}
-	case ':': // integer
+	case byte(RESPTypeInteger): // integer
 		{
 			len := bytes.IndexByte(data, '\n')
 			if len == -1 || len == 0 {
@@ -55,7 +111,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{Type: RESPTypeInteger, Integer: integer}, data[len+1:], nil
 		}
-	case '$': // bulk string
+	case byte(RESPTypeBulkString): // bulk string
 		{
 			// fmt.Printf("Bulk string data: %q\n", string(data))
 			len := bytes.IndexByte(data, '\n')
@@ -70,7 +126,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			// fmt.Printf("Bulk string value: %q\n", string(value))
 			return Value{Type: RESPTypeBulkString, String: value}, data[len+end+3:], nil
 		}
-	case '*': // array
+	case byte(RESPTypeArray): // array
 		{
 			length := bytes.IndexByte(data, '\n')
 			if length == -1 || length == 0 {
@@ -96,7 +152,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{Type: RESPTypeArray, Array: array}, buf, nil
 		}
-	case '-': // error
+	case byte(RESPTypeError): // error
 		{
 			len := bytes.IndexByte(data, '\n')
 			if len == -1 || len == 0 {
@@ -104,7 +160,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{Type: RESPTypeError, String: string(data[1 : len-1])}, data[len+1:], nil
 		}
-	case '#': // boolean
+	case byte(RESPTypeBoolean): // boolean
 		{
 			if bytes.Equal(data[:4], []byte("#t\r\n")) {
 				return Value{Type: RESPTypeBoolean, Boolean: true}, data[4:], nil
@@ -114,7 +170,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{}, []byte(nil), fmt.Errorf("invalid boolean format: %s", string(data))
 		}
-	case ',': // double
+	case byte(RESPTypeDouble): // double
 		{
 			i := 1
 			var integral, fractional, exponent []byte
@@ -170,7 +226,7 @@ func Parse(data []byte) (Value, []byte, error) {
 			}
 			return Value{Type: RESPTypeDouble, Double: double}, data[i+1:], nil
 		}
-	case '(': // big number
+	case byte(RESPTypeBigNumber): // big number
 		{
 			len := bytes.IndexByte(data, '\n')
 			if len == -1 || len == 0 {
@@ -268,6 +324,10 @@ func ToError(value string) []byte {
 	}
 	var buf []byte
 	buf = append(buf, '-')
+	buf = append(buf, 'E')
+	buf = append(buf, 'R')
+	buf = append(buf, 'R')
+	buf = append(buf, ' ')
 	buf = append(buf, []byte(value)...)
 	buf = append(buf, '\r')
 	buf = append(buf, '\n')

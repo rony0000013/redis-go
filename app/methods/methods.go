@@ -1,6 +1,7 @@
 package methods
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,47 +10,41 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 )
 
-type StoreValue struct {
-	Value    []byte
-	ExpireAt time.Time // Zero time means no expiration
-}
-
 var nullTimeStamp = time.Time{}
 
 func Echo(commands resp.Value) []byte {
 	if len(commands.Array) < 2 {
-		return []byte("-ERR wrong number of arguments for 'echo' command\r\n")
+		return resp.ToError("wrong number of arguments for 'echo' command")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR echo value must be a string\r\n")
+		return resp.ToError("echo value must be a string")
 	}
 	value, err := resp.ParseValue(commands.Array[1])
 	if err != nil {
-		return []byte("-ERR Err parsing echo value: " + err.Error() + "\r\n")
+		return resp.ToError("Err parsing echo value: " + err.Error())
 	}
 	return value
 }
 
-func Set(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) []byte {
+func Set(commands resp.Value, mu *sync.Mutex, db *resp.Database) (respBytes []byte) {
 	if len(commands.Array) < 3 {
-		return []byte("-ERR wrong number of arguments for 'set' command\r\n")
+		return resp.ToError("wrong number of arguments for 'set' command")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR set key must be a string\r\n")
+		return resp.ToError("set key must be a string")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR set value must be a string\r\n")
+		return resp.ToError("set value must be a string")
 	}
-	key := commands.Array[1].String
 
 	expiration := time.Duration(0)
 	if len(commands.Array) == 5 {
 		if commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
-			return []byte("-ERR set expiration type must be a string\r\n")
+			return resp.ToError("set expiration type must be a string")
 		}
 
 		if commands.Array[4].Type != resp.RESPTypeInteger && commands.Array[4].Type != resp.RESPTypeBulkString && commands.Array[4].Type != resp.RESPTypeSimpleString {
-			return []byte("-ERR set expiration value must be an integer\r\n")
+			return resp.ToError("set expiration value must be an integer")
 		}
 		expirationValue := 0
 		if commands.Array[4].Type == resp.RESPTypeInteger {
@@ -57,7 +52,7 @@ func Set(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expir
 		} else {
 			eval, err := strconv.Atoi(commands.Array[4].String)
 			if err != nil {
-				return []byte("-ERR set expiration value must be an integer\r\n")
+				return resp.ToError("set expiration value must be an integer")
 			}
 			expirationValue = eval
 		}
@@ -66,66 +61,119 @@ func Set(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expir
 		} else if strings.ToUpper(commands.Array[3].String) == "PX" {
 			expiration = time.Millisecond * time.Duration(expirationValue)
 		} else {
-			return []byte("-ERR set expiration type must be 'EX' or 'PX'\r\n")
+			return resp.ToError("set expiration type must be 'EX' or 'PX'")
 		}
 	}
 
-	value, err := resp.ParseValue(commands.Array[2])
-	if err != nil {
-		return []byte("-ERR Err parsing set value: " + err.Error() + "\r\n")
-	}
-
-	// fmt.Printf("SET %q %q %v\n", key, value, expiration)
 	mu.Lock()
-	if val, exists := store[key]; exists {
-		if val.ExpireAt != nullTimeStamp {
-			delete(expiryMap, val.ExpireAt)
+	defer mu.Unlock()
+
+	key := commands.Array[1].String
+	if key == "" {
+		return resp.ToError("empty key")
+	}
+
+	// Check if key exists and clean up old expiry if needed
+	if oldVal, exists := (*db).Store[key]; exists {
+		if !oldVal.ExpireAt.IsZero() {
+			delete((*db).ExpiryMap, oldVal.ExpireAt)
 		}
 	}
-	if expiration > 0 {
+
+	// Set new value and expiry
+	if expiration != time.Duration(0) {
 		timeStamp := time.Now().Add(expiration)
-		store[key] = StoreValue{Value: value, ExpireAt: timeStamp}
-		expiryMap[timeStamp] = key
+		(*db).Store[key] = resp.StoreValue{
+			Value:    commands.Array[2],
+			ExpireAt: timeStamp,
+		}
+		(*db).ExpiryMap[timeStamp] = key
 	} else {
-		store[key] = StoreValue{Value: value, ExpireAt: nullTimeStamp}
+		// fmt.Println("SET", key, commands.Array[2].String, expiration)
+		(*db).Store[key] = resp.StoreValue{
+			Value:    commands.Array[2],
+			ExpireAt: nullTimeStamp,
+		}
 	}
-	mu.Unlock()
 	return resp.ToSimpleString("OK")
 }
 
-func Get(commands resp.Value, mu *sync.Mutex, store map[string]StoreValue, expiryMap map[time.Time]string) []byte {
+func Get(commands resp.Value, mu *sync.Mutex, db *resp.Database) []byte {
 	if len(commands.Array) < 2 {
-		return []byte("-ERR wrong number of arguments for 'get' command\r\n")
+		return resp.ToError("wrong number of arguments for 'get' command")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR get key must be a string\r\n")
+		return resp.ToError("get key must be a string")
 	}
 	key := commands.Array[1].String
 
 	mu.Lock()
-	if val, exists := store[key]; exists {
+	defer mu.Unlock()
+
+	if val, exists := (*db).Store[key]; exists {
 		// fmt.Printf("GET %q %q %v\n", key, val.Value, val.ExpireAt)
-		if val.ExpireAt != nullTimeStamp && val.ExpireAt.Before(time.Now()) {
-			delete(expiryMap, val.ExpireAt)
-			delete(store, key)
-			mu.Unlock()
+		if !val.ExpireAt.IsZero() && val.ExpireAt.Before(time.Now()) {
+			delete((*db).ExpiryMap, val.ExpireAt)
+			delete((*db).Store, key)
 			return resp.ToBulkString("")
 		}
 		value := val.Value
-		mu.Unlock()
-		return value
+
+		BytesValue, err := resp.ParseValue(value)
+		if err != nil {
+			return resp.ToError("Err parsing value: " + err.Error())
+		}
+
+		return BytesValue
 	} else {
-		mu.Unlock()
 		return resp.ToBulkString("")
 	}
 }
 
-func HandleConfig(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
+func Keys(commands resp.Value, mu *sync.Mutex, db *resp.Database) []byte {
 	if len(commands.Array) < 2 {
-		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
+		return resp.ToError("wrong number of arguments for 'keys' command")
 	}
 	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR config key must be a string\r\n")
+		return resp.ToError("keys pattern must be a string")
+	}
+	var pattern strings.Builder
+
+	for _, c := range commands.Array[1].String {
+		switch c {
+		case '*':
+			pattern.WriteString(".*")
+		case '?':
+			pattern.WriteString(".")
+		default:
+			pattern.WriteRune(c)
+		}
+	}
+
+	regexPattern := pattern.String()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	keys := make([]any, 0)
+	for key := range (*db).Store {
+		match, err := regexp.MatchString(regexPattern, key)
+		if err != nil {
+			return resp.ToError("Err matching pattern: " + err.Error())
+		}
+		if match {
+			keys = append(keys, key)
+		}
+	}
+	return resp.ToArray(keys)
+}
+
+func HandleConfig(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
+	if len(commands.Array) < 2 {
+		return resp.ToError("wrong number of arguments for 'config' command")
+	}
+	if commands.Array[1].Type != resp.RESPTypeBulkString && commands.Array[1].Type != resp.RESPTypeSimpleString {
+		return resp.ToError("config key must be a string")
 	}
 	key := commands.Array[1].String
 	switch strings.ToUpper(key) {
@@ -134,16 +182,16 @@ func HandleConfig(commands resp.Value, mu *sync.Mutex, config map[string]string)
 	case "SET":
 		return ConfigSet(commands, mu, config)
 	default:
-		return []byte("-ERR unknown config command\r\n")
+		return resp.ToError("unknown config command")
 	}
 }
 
 func ConfigGet(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
 	if len(commands.Array) < 2 {
-		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
+		return resp.ToError("wrong number of arguments for 'config' command")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR config key must be a string\r\n")
+		return resp.ToError("config key must be a string")
 	}
 	key := commands.Array[2].String
 	mu.Lock()
@@ -158,10 +206,10 @@ func ConfigGet(commands resp.Value, mu *sync.Mutex, config map[string]string) []
 
 func ConfigSet(commands resp.Value, mu *sync.Mutex, config map[string]string) []byte {
 	if len(commands.Array) < 3 {
-		return []byte("-ERR wrong number of arguments for 'config' command\r\n")
+		return resp.ToError("wrong number of arguments for 'config' command")
 	}
 	if commands.Array[2].Type != resp.RESPTypeBulkString && commands.Array[2].Type != resp.RESPTypeSimpleString && commands.Array[3].Type != resp.RESPTypeBulkString && commands.Array[3].Type != resp.RESPTypeSimpleString {
-		return []byte("-ERR config key and value must be a string\r\n")
+		return resp.ToError("config key and value must be a string")
 	}
 	key := commands.Array[2].String
 	value := commands.Array[3].String
