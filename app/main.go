@@ -65,23 +65,18 @@ func main() {
 		os.Exit(1)
 	}
 	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM, os.Kill)
 
 	go startExpiryChecker(stopCh)
 
 	fmt.Println("Server started on port 6379")
 
 	// Start a goroutine to handle server shutdown
-	// go func() {
-	// 	<-stopCh
-	// 	fmt.Println("\nShutting down server...")
-	// 	err = rdb.Save(*dir_flag, *dbfilename_flag, Config, Databases)
-	// 	if err != nil {
-	// 		fmt.Println("Failed to save database: ", err.Error())
-	// 	}
-	// 	fmt.Println("Server stopped")
-	// 	os.Exit(0)
-	// }()
+	go func() {
+		<-stopCh
+		fmt.Println("\nShutting down server...")
+		os.Exit(0)
+	}()
 
 	// Main server loop
 	for {
