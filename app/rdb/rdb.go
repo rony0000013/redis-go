@@ -113,8 +113,6 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 					return fmt.Errorf("error writing expiry time: %v", err)
 				}
 				expiry_size += 1
-			} else {
-				table_size += 1
 			}
 			// Write value type
 			valType, err := encodeValueType(value.Value)
@@ -142,6 +140,7 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 			if err != nil {
 				return fmt.Errorf("error writing value: %v", err)
 			}
+			table_size += 1
 		}
 
 		// Write table size
@@ -212,7 +211,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file: %v", err)
 	}
-	fmt.Printf("File bytes: % X\n", fileBytes)
+	// fmt.Printf("File bytes: % X\n", fileBytes)
 
 	if len(fileBytes) < 8 {
 		return nil, nil, fmt.Errorf("file is too small: % X", fileBytes)
@@ -285,16 +284,22 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 
 		for tableSize > 0 || expirySize > 0 {
 			expiryTime := time.Time{}
-			if fileBytes[0] == 0xFD || fileBytes[0] == 0xFC {
+			if fileBytes[0] == 0xFD {
 				expirySize -= 1
 				fileBytes = fileBytes[1:]
-				sec_time, err := decodeInteger(&fileBytes)
+				sec_time, err := decodeTimeStamp(&fileBytes, 4)
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid expiry time: %v", err)
 				}
-				expiryTime = time.Unix(int64(sec_time), 0)
-			} else {
-				tableSize -= 1
+				expiryTime = sec_time
+			} else if fileBytes[0] == 0xFC {
+				expirySize -= 1
+				fileBytes = fileBytes[1:]
+				sec_time, err := decodeTimeStamp(&fileBytes, 8)
+				if err != nil {
+					return nil, nil, fmt.Errorf("invalid expiry time: %v", err)
+				}
+				expiryTime = sec_time
 			}
 
 			valueType := fileBytes[0]
@@ -323,6 +328,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 						databases[databaseId].ExpiryMap[expiryTime] = key
 					}
 				}
+				tableSize -= 1
 			default:
 				return nil, nil, fmt.Errorf("invalid value type: %v", valueType)
 			}
@@ -478,32 +484,51 @@ func encodeInteger[N uint8 | uint16 | uint32 | int8 | int16 | int32 | int](value
 	return buf.Bytes(), nil
 }
 
-func decodeInteger(data *[]byte) (int, error) {
+func decodeTimeStamp(data *[]byte, byteCount int) (time.Time, error) {
 	if len(*data) == 0 {
-		return 0, fmt.Errorf("empty data")
+		return time.Time{}, fmt.Errorf("empty data")
 	}
-
-	firstByte := (*data)[0]
-	*data = (*data)[1:]
-	if firstByte == 0xC0 {
-		var value int8
-		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
-		*data = (*data)[1:]
-		return int(value), nil
-	} else if firstByte == 0xC1 {
-		var value int16
-		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
-		*data = (*data)[2:]
-		return int(value), nil
-	} else if firstByte == 0xC2 {
+	if byteCount == 4 {
 		var value int32
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
 		*data = (*data)[4:]
-		return int(value), nil
-	} else {
-		return 0, fmt.Errorf("invalid integer prefix")
+		return time.Unix(int64(value), 0), nil
 	}
+	if byteCount == 8 {
+		var value int64
+		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+		*data = (*data)[8:]
+		return time.Unix(int64(value), 0), nil
+	}
+	return time.Time{}, fmt.Errorf("invalid byte count: %v", byteCount)
 }
+
+// func decodeInteger(data *[]byte) (int, error) {
+// 	if len(*data) == 0 {
+// 		return 0, fmt.Errorf("empty data")
+// 	}
+
+// 	firstByte := (*data)[0]
+// 	*data = (*data)[1:]
+// 	if firstByte == 0xC0 {
+// 		var value int8
+// 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+// 		*data = (*data)[1:]
+// 		return int(value), nil
+// 	} else if firstByte == 0xC1 {
+// 		var value int16
+// 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+// 		*data = (*data)[2:]
+// 		return int(value), nil
+// 	} else if firstByte == 0xC2 {
+// 		var value int32
+// 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+// 		*data = (*data)[4:]
+// 		return int(value), nil
+// 	} else {
+// 		return 0, fmt.Errorf("invalid integer prefix")
+// 	}
+// }
 
 func encodeValue(value resp.Value) ([]byte, error) {
 	switch value.Type {
