@@ -315,9 +315,13 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid value: %v", err)
 				}
-				databases[databaseId].Store[key] = resp.NewStoreValue(value, expiryTime)
-				if expiryTime != (time.Time{}) {
-					databases[databaseId].ExpiryMap[expiryTime] = key
+				if expiryTime != (time.Time{}) && time.Now().Before(expiryTime) {
+					databases[databaseId].Store[key] = resp.NewStoreValue(resp.NewBulkString(""), expiryTime)
+				} else {
+					databases[databaseId].Store[key] = resp.NewStoreValue(value, expiryTime)
+					if expiryTime != (time.Time{}) {
+						databases[databaseId].ExpiryMap[expiryTime] = key
+					}
 				}
 			default:
 				return nil, nil, fmt.Errorf("invalid value type: %v", valueType)
