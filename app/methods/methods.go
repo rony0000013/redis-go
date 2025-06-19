@@ -1,6 +1,7 @@
 package methods
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -111,7 +112,7 @@ func Get(commands resp.Value, mu *sync.Mutex, db *resp.Database) []byte {
 	defer mu.Unlock()
 
 	if val, exists := (*db).Store[key]; exists {
-		// fmt.Printf("GET %q %q %v\n", key, val.Value, val.ExpireAt)
+		fmt.Printf("Expired GET %s %s\n", key, val.ExpireAt)
 		if !val.ExpireAt.IsZero() && val.ExpireAt.Before(time.Now()) {
 			delete((*db).ExpiryMap, val.ExpireAt)
 			delete((*db).Store, key)
