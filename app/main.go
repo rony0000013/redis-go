@@ -43,6 +43,7 @@ func main() {
 	} else {
 		Config = metadata
 		Databases = databases
+		// fmt.Printf("Database opened: %s\n", Databases)
 	}
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")

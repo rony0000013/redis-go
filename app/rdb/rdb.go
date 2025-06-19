@@ -101,11 +101,10 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 		for key, value := range database.Store {
 			if !value.ExpireAt.IsZero() {
 				// Write expiry marker
-				cnt, err := KVbuf.Write([]byte{0xFC})
+				_, err := KVbuf.Write([]byte{0xFC})
 				if err != nil {
 					return fmt.Errorf("error writing expiry marker: %v", err)
 				}
-				expiry_size += cnt
 
 				// Write expiry time
 				expiryTime := value.ExpireAt.Unix()
@@ -113,7 +112,9 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 				if err != nil {
 					return fmt.Errorf("error writing expiry time: %v", err)
 				}
-				expiry_size += 8
+				expiry_size += 1
+			} else {
+				table_size += 1
 			}
 			// Write value type
 			valType, err := encodeValueType(value.Value)
@@ -121,29 +122,26 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 				return fmt.Errorf("error writing value type: %v", err)
 			}
 			KVbuf.WriteByte(valType)
-			table_size += 1
 
 			// Write key
 			keyBytes, err := encodeString(key)
 			if err != nil {
 				return fmt.Errorf("error encoding key: %v", err)
 			}
-			cnt, err := KVbuf.Write(keyBytes)
+			_, err = KVbuf.Write(keyBytes)
 			if err != nil {
 				return fmt.Errorf("error writing key: %v", err)
 			}
-			table_size += cnt
 
 			// Write value
 			valueBytes, err := encodeValue(value.Value)
 			if err != nil {
 				return fmt.Errorf("error encoding value: %v", err)
 			}
-			cnt, err = KVbuf.Write(valueBytes)
+			_, err = KVbuf.Write(valueBytes)
 			if err != nil {
 				return fmt.Errorf("error writing value: %v", err)
 			}
-			table_size += cnt
 		}
 
 		// Write table size
@@ -165,11 +163,8 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 		}
 
 		// Write key, values
-		cnt, err := buf.Write(KVbuf.Bytes())
+		_, err = buf.Write(KVbuf.Bytes())
 		if err != nil {
-			return fmt.Errorf("error writing key, values to database: %v", err)
-		}
-		if cnt != table_size+expiry_size {
 			return fmt.Errorf("error writing key, values to database: %v", err)
 		}
 
@@ -203,7 +198,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	}
 
 	filePath := filepath.Join(dir, dbfilename)
-	fmt.Printf("Opening file: %v\n", filePath)
+	// fmt.Printf("Opening file: %v\n", filePath)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return nil, nil, fmt.Errorf("file does not exist: %v", filePath)
 	}
@@ -217,7 +212,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file: %v", err)
 	}
-	fmt.Printf("File bytes: % X\n", fileBytes)
+	// fmt.Printf("File bytes: % X\n", fileBytes)
 
 	if len(fileBytes) < 8 {
 		return nil, nil, fmt.Errorf("file is too small: % X", fileBytes)
@@ -246,20 +241,19 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	databases = make(map[uint8]resp.Database)
 
 	// Metadata Section
-	metadataArray := make([]string, 0)
-	if fileBytes[0] == 0xFA {
+	for fileBytes[0] == 0xFA {
 		fileBytes = fileBytes[1:]
-		for fileBytes[0] != 0xFE {
-			str, err := decodeString(&fileBytes)
-			if err != nil {
-				break
-			}
-			metadataArray = append(metadataArray, str)
+		key, err := decodeString(&fileBytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid metadata: %v", err)
 		}
-		for i := 0; i < len(metadataArray); i += 2 {
-			metadata[metadataArray[i]] = metadataArray[i+1]
+		value, err := decodeString(&fileBytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid metadata: %v", err)
 		}
+		metadata[key] = value
 	}
+
 	// Database Sections
 	for len(fileBytes) > 0 && (fileBytes[0] == 0xFE || fileBytes[0] == 0xFF) {
 		if fileBytes[0] == 0xFF {
@@ -287,31 +281,37 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 			return nil, nil, fmt.Errorf("invalid expiry size: %v", err)
 		}
 
-		databaseBytes := fileBytes[:tableSize+expirySize]
-		fileBytes = fileBytes[tableSize+expirySize:]
+		// fmt.Printf("tableSize: %v, expirySize: %v\n", tableSize, expirySize)
 
-		for len(databaseBytes) > 0 {
+		for tableSize > 0 || expirySize > 0 {
 			expiryTime := time.Time{}
-			if databaseBytes[0] == 0xFD || databaseBytes[0] == 0xFC {
-				databaseBytes = databaseBytes[1:]
-				sec_time, err := decodeInteger(&databaseBytes)
+			if fileBytes[0] == 0xFD || fileBytes[0] == 0xFC {
+				expirySize -= 1
+				fileBytes = fileBytes[1:]
+				sec_time, err := decodeInteger(&fileBytes)
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid expiry time: %v", err)
 				}
 				expiryTime = time.Unix(int64(sec_time), 0)
+			} else {
+				tableSize -= 1
 			}
 
-			valueType := databaseBytes[0]
-			databaseBytes = databaseBytes[1:]
+			valueType := fileBytes[0]
+			fileBytes = fileBytes[1:]
 
-			key, err := decodeString(&databaseBytes)
+			// fmt.Printf("valueType: %v\n", valueType)
+			// fmt.Printf("fileBytes: % X\n", fileBytes)
+			key, err := decodeString(&fileBytes)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid key: %v", err)
 			}
+			// fmt.Printf("key: %v\n", key)
 
 			switch valueType {
 			case 0x00:
-				value, err := decodeValue(&databaseBytes)
+				value, err := decodeValue(&fileBytes)
+				// fmt.Printf("value: %s\n", value)
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid value: %v", err)
 				}
@@ -323,12 +323,16 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 				return nil, nil, fmt.Errorf("invalid value type: %v", valueType)
 			}
 		}
+
+		if tableSize != 0 || expirySize != 0 {
+			return nil, nil, fmt.Errorf("invalid table size: %v, expiry size: %v", tableSize, expirySize)
+		}
 	}
-	fmt.Println("databases: ", databases)
+	// fmt.Println("databases: ", databases)
 
 	// End of Database Sections
 	if fileBytes[0] != 0xFF || len(fileBytes) != 1 {
-		return nil, nil, fmt.Errorf("invalid end of database sections: %v", fileBytes[0])
+		return nil, nil, fmt.Errorf("invalid end of database sections: % X", fileBytes)
 	}
 
 	return metadata, databases, nil
@@ -398,10 +402,34 @@ func decodeString(data *[]byte) (string, error) {
 		return "", fmt.Errorf("empty data")
 	}
 
+	// Decode Integer
+	firstByte := (*data)[0]
+	if firstByte == 0xC0 {
+		var value int8
+		*data = (*data)[1:]
+		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+		*data = (*data)[1:]
+		return strconv.FormatInt(int64(value), 10), nil
+	} else if firstByte == 0xC1 {
+		var value int16
+		*data = (*data)[1:]
+		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+		*data = (*data)[2:]
+		return strconv.FormatInt(int64(value), 10), nil
+	} else if firstByte == 0xC2 {
+		var value int32
+		*data = (*data)[1:]
+		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
+		*data = (*data)[4:]
+		return strconv.FormatInt(int64(value), 10), nil
+	}
+
+	// Decode String
 	length, err := decodeLength(data)
 	if err != nil {
 		return "", fmt.Errorf("error decoding length prefix: %v", err)
 	}
+
 	str := string((*data)[:length])
 	*data = (*data)[length:]
 	return str, nil
@@ -456,17 +484,17 @@ func decodeInteger(data *[]byte) (int, error) {
 	if firstByte == 0xC0 {
 		var value int8
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
-		*data = (*data)[2:]
+		*data = (*data)[1:]
 		return int(value), nil
 	} else if firstByte == 0xC1 {
 		var value int16
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
-		*data = (*data)[4:]
+		*data = (*data)[2:]
 		return int(value), nil
 	} else if firstByte == 0xC2 {
 		var value int32
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
-		*data = (*data)[8:]
+		*data = (*data)[4:]
 		return int(value), nil
 	} else {
 		return 0, fmt.Errorf("invalid integer prefix")
