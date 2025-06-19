@@ -224,11 +224,17 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	}
 
 	// Checksum
-	checksum := crc64.Digest(fileBytes[:len(fileBytes)-8])
-	if checksum != binary.LittleEndian.Uint64(fileBytes[len(fileBytes)-8:]) {
+	index := len(fileBytes) - 1
+	for ; index >= 0; index-- {
+		if fileBytes[index] == 0xFF {
+			break
+		}
+	}
+	checksum := crc64.Digest(fileBytes[:index+1])
+	if checksum != binary.LittleEndian.Uint64(fileBytes[index+1:]) {
 		return nil, nil, fmt.Errorf("invalid checksum: %v", checksum)
 	}
-	fileBytes = fileBytes[:len(fileBytes)-8]
+	fileBytes = fileBytes[:index+1]
 
 	// Redis Version
 	redis_version := []byte(REDIS_VERSION)
