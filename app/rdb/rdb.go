@@ -559,7 +559,7 @@ func decodeValue(data *[]byte) (resp.Value, error) {
 		return resp.NewBoolean(false), nil
 	}
 
-	return resp.NewError("invalid value prefix"), nil
+	return resp.NewBulkString(str), nil
 }
 
 func encodeValueType(value resp.Value) (byte, error) {
