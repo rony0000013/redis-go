@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,20 +30,20 @@ func main() {
 	flag.Parse()
 
 	if *dir_flag != "" {
-		err := os.MkdirAll(*dir_flag, 0755)
-		if err != nil {
-			fmt.Println("Failed to create directory: ", err.Error())
-			os.Exit(1)
-		}
+		// err := os.MkdirAll(*dir_flag, 0755)
+		// if err != nil {
+		// 	fmt.Println("Failed to create directory: ", err.Error())
+		// 	os.Exit(1)
+		// }
 		Config["dir"] = *dir_flag
 	}
 	if *dbfilename_flag != "" {
-		filePath := filepath.Join(*dir_flag, *dbfilename_flag)
-		_, err := os.Create(filePath)
-		if err != nil {
-			fmt.Println("Failed to create file: ", err.Error())
-			os.Exit(1)
-		}
+		// filePath := filepath.Join(*dir_flag, *dbfilename_flag)
+		// _, err := os.Create(filePath)
+		// if err != nil {
+		// 	fmt.Println("Failed to create file: ", err.Error())
+		// 	os.Exit(1)
+		// }
 		Config["dbfilename"] = *dbfilename_flag
 	}
 
