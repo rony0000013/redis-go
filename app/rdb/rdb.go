@@ -291,7 +291,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid expiry time: %v", err)
 				}
-				fmt.Printf("expiryTime: %s\n", sec_time)
+				// fmt.Printf("expiryTime: %s\n", sec_time)
 				expiryTime = sec_time
 			} else if fileBytes[0] == 0xFC {
 				expirySize -= 1
@@ -300,7 +300,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 				if err != nil {
 					return nil, nil, fmt.Errorf("invalid expiry time: %v", err)
 				}
-				fmt.Printf("expiryTime: %s\n", sec_time)
+				// fmt.Printf("expiryTime: %s\n", sec_time)
 				expiryTime = sec_time
 			}
 
@@ -494,13 +494,17 @@ func decodeTimeStamp(data *[]byte, byteCount int) (time.Time, error) {
 		var value int32
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
 		*data = (*data)[4:]
-		return time.Unix(int64(value), 0), nil
+		sec := int64(value / 1000)
+		nsec := (int64(value%1000) * int64(time.Millisecond))
+		return time.Unix(sec, nsec), nil
 	}
 	if byteCount == 8 {
 		var value int64
 		binary.Read(bytes.NewReader(*data), binary.LittleEndian, &value)
 		*data = (*data)[8:]
-		return time.Unix(0, value), nil
+		sec := value / 1000
+		nsec := (value % 1000) * int64(time.Millisecond)
+		return time.Unix(sec, nsec), nil
 	}
 	return time.Time{}, fmt.Errorf("invalid byte count: %v", byteCount)
 }
