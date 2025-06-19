@@ -211,7 +211,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading file: %v", err)
 	}
-	// fmt.Printf("File bytes: % X\n", fileBytes)
+	fmt.Printf("File bytes: % X\n", fileBytes)
 
 	if len(fileBytes) < 8 {
 		return nil, nil, fmt.Errorf("file is too small: % X", fileBytes)
