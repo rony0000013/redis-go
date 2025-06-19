@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"hash/crc64"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/codecrafters-io/redis-starter-go/app/crc64"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 )
 
@@ -180,7 +180,7 @@ func Save(dir string, dbfilename string, metadata map[string]string, databases m
 		return fmt.Errorf("error writing end of database: %v", err)
 	}
 
-	checksum := crc64.Checksum(buf.Bytes(), crc64.MakeTable(crc64.ECMA))
+	checksum := crc64.Digest(buf.Bytes())
 	checksumBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(checksumBytes, checksum)
 
@@ -224,7 +224,7 @@ func Open(dir string, dbfilename string) (metadata map[string]string, databases 
 	}
 
 	// Checksum
-	checksum := crc64.Checksum(fileBytes[:len(fileBytes)-8], crc64.MakeTable(crc64.ECMA))
+	checksum := crc64.Digest(fileBytes[:len(fileBytes)-8])
 	if checksum != binary.LittleEndian.Uint64(fileBytes[len(fileBytes)-8:]) {
 		return nil, nil, fmt.Errorf("invalid checksum: %v", checksum)
 	}
