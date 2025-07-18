@@ -63,7 +63,7 @@ func main() {
 		}
 		defer conn.Close()
 
-		replication.SendHandshake(conn)
+		replication.SendHandshake(conn, &Config)
 	} else {
 		Config["role"] = "master"
 		Config["master_host"] = "localhost"
