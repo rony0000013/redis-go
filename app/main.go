@@ -14,6 +14,7 @@ import (
 
 	"github.com/codecrafters-io/redis-starter-go/app/methods"
 	"github.com/codecrafters-io/redis-starter-go/app/rdb"
+	"github.com/codecrafters-io/redis-starter-go/app/replication"
 	"github.com/codecrafters-io/redis-starter-go/app/resp"
 )
 
@@ -50,11 +51,23 @@ func main() {
 
 	if *replicaof_flag != "" {
 		Config["role"] = "slave"
+		Config["master_host"] = strings.Split(*replicaof_flag, " ")[0]
+		Config["master_port"] = strings.Split(*replicaof_flag, " ")[1]
 		Config["connected_slaves"] = "1"
 		Config["master_replid"] = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
 		Config["master_repl_offset"] = "0"
+		conn, err := net.Dial("tcp", *replicaof_flag)
+		if err != nil {
+			fmt.Println("Failed to connect to master: ", err.Error())
+			os.Exit(1)
+		}
+		defer conn.Close()
+
+		replication.SendHandshake(conn)
 	} else {
 		Config["role"] = "master"
+		Config["master_host"] = "localhost"
+		Config["master_port"] = *port_flag
 		Config["connected_slaves"] = "0"
 		Config["master_replid"] = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
 		Config["master_repl_offset"] = "0"
@@ -77,8 +90,6 @@ func main() {
 		fmt.Println("\nShutting down server...")
 		os.Exit(0)
 	}()
-
-	// bytes := []byte{0x52, 0x45, 0x44, 0x49, 0x53, 0x30, 0x30, 0x31, 0x31, 0xFA, 0x09, 0x72, 0x65, 0x64, 0x69, 0x73, 0x2D, 0x76, 0x65, 0x72, 0x05, 0x37, 0x2E, 0x32, 0x2E, 0x30, 0xFA, 0x0A, 0x72, 0x65, 0x64, 0x69, 0x73, 0x2D, 0x62, 0x69, 0x74, 0x73, 0xC0, 0x40, 0xFE, 0x00, 0xFB, 0x01, 0x00, 0x00, 0x04, 0x70, 0x65, 0x61, 0x72, 0x06, 0x62, 0x61, 0x6E, 0x61, 0x6E, 0x61, 0xFF, 0xD4, 0x25, 0x92, 0x6B, 0xA5, 0x56, 0x5A, 0x4F, 0x0A}
 
 	// Main server loop
 	for {
