@@ -28,7 +28,7 @@ func main() {
 	dir_flag := flag.String("dir", "", "Directory to store data")
 	dbfilename_flag := flag.String("dbfilename", "", "File to store data")
 	port_flag := flag.String("port", "6379", "Port to listen on")
-	relicaof_flag := flag.String("relicaof", "", "Replica of")
+	replicaof_flag := flag.String("replicaof", "", "Replica of")
 	flag.Parse()
 
 	if *dir_flag != "" {
@@ -37,9 +37,8 @@ func main() {
 	if *dbfilename_flag != "" {
 		Config["dbfilename"] = *dbfilename_flag
 	}
-	if *relicaof_flag != "" {
+	if *replicaof_flag != "" {
 		Config["role"] = "replica"
-		Config["relicaof"] = *relicaof_flag
 		Config["connected_slaves"] = "0"
 		// Config["master_replid"] = ""
 		// Config["master_repl_offset"] = ""
