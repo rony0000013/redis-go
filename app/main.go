@@ -27,6 +27,7 @@ var (
 func main() {
 	dir_flag := flag.String("dir", "", "Directory to store data")
 	dbfilename_flag := flag.String("dbfilename", "", "File to store data")
+	port_flag := flag.String("port", "6379", "Port to listen on")
 	flag.Parse()
 
 	if *dir_flag != "" {
@@ -46,9 +47,9 @@ func main() {
 		// fmt.Printf("Database opened: %s\n", Databases)
 	}
 
-	l, err := net.Listen("tcp", "0.0.0.0:6379")
+	l, err := net.Listen("tcp", "0.0.0.0:"+*port_flag)
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Println("Failed to bind to port ", *port_flag)
 		os.Exit(1)
 	}
 	stopCh := make(chan os.Signal, 1)
@@ -56,7 +57,7 @@ func main() {
 
 	go startExpiryChecker(stopCh)
 
-	fmt.Println("Server started on port 6379")
+	fmt.Println("Server started on port ", *port_flag)
 
 	// Start a goroutine to handle server shutdown
 	go func() {
