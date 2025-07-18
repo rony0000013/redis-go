@@ -223,6 +223,7 @@ func Info(commands resp.Value, config map[string]string) []byte {
 	if len(commands.Array) == 1 {
 		return resp.ToSimpleString("PONG")
 	}
+
 	if (commands.Array[1].Type == resp.RESPTypeBulkString || commands.Array[1].Type == resp.RESPTypeSimpleString) && strings.ToLower(commands.Array[1].String) == "replication" {
 		return resp.ToBulkString(
 			"# Replication\n" +

@@ -37,9 +37,20 @@ func main() {
 	if *dbfilename_flag != "" {
 		Config["dbfilename"] = *dbfilename_flag
 	}
+
+	metadata, databases, err := rdb.Open(Config["dir"], Config["dbfilename"])
+	if err != nil {
+		fmt.Println("Failed to open database: ", err.Error())
+		Databases[DatabaseID] = resp.NewDatabase(DatabaseID)
+	} else {
+		Config = metadata
+		Databases = databases
+		// fmt.Printf("Database opened: %s\n", Databases)
+	}
+
 	if *replicaof_flag != "" {
-		Config["role"] = "replica"
-		Config["connected_slaves"] = "0"
+		Config["role"] = "slave"
+		Config["connected_slaves"] = "1"
 		// Config["master_replid"] = ""
 		// Config["master_repl_offset"] = ""
 		// Config["second_repl_offset"] = ""
@@ -58,17 +69,6 @@ func main() {
 		// Config["repl_backlog_first_byte_offset"] = ""
 		// Config["repl_backlog_histlen"] = ""
 	}
-
-	metadata, databases, err := rdb.Open(Config["dir"], Config["dbfilename"])
-	if err != nil {
-		fmt.Println("Failed to open database: ", err.Error())
-		Databases[DatabaseID] = resp.NewDatabase(DatabaseID)
-	} else {
-		Config = metadata
-		Databases = databases
-		// fmt.Printf("Database opened: %s\n", Databases)
-	}
-
 	l, err := net.Listen("tcp", "0.0.0.0:"+*port_flag)
 	if err != nil {
 		fmt.Println("Failed to bind to port ", *port_flag)
