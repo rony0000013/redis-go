@@ -218,3 +218,24 @@ func ConfigSet(commands resp.Value, mu *sync.Mutex, config map[string]string) []
 	mu.Unlock()
 	return resp.ToBulkString("OK")
 }
+
+func Info(commands resp.Value) []byte {
+	if len(commands.Array) == 1 {
+		return resp.ToSimpleString("PONG")
+	}
+	if (commands.Array[1].Type == resp.RESPTypeBulkString || commands.Array[1].Type == resp.RESPTypeSimpleString) && strings.ToLower(commands.Array[1].String) == "replication" {
+		return resp.ToBulkString(
+			"# Replication\n" +
+				"role:master\n" +
+				"connected_slaves:0\n" +
+				"master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n" +
+				"master_repl_offset:0\n" +
+				"second_repl_offset:-1\n" +
+				"repl_backlog_active:0\n" +
+				"repl_backlog_size:1048576\n" +
+				"repl_backlog_first_byte_offset:0\n" +
+				"repl_backlog_histlen:0\n",
+		)
+	}
+	return resp.ToSimpleString("PONG")
+}

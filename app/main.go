@@ -137,7 +137,7 @@ func handle(conn net.Conn) {
 		case "PING":
 			conn.Write(resp.ToSimpleString("PONG"))
 		case "INFO":
-			conn.Write(resp.ToSimpleString("PONG"))
+			conn.Write(methods.Info(commands))
 		case "ECHO":
 			conn.Write(methods.Echo(commands))
 		case "SET":
