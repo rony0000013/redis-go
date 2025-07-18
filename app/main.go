@@ -28,6 +28,7 @@ func main() {
 	dir_flag := flag.String("dir", "", "Directory to store data")
 	dbfilename_flag := flag.String("dbfilename", "", "File to store data")
 	port_flag := flag.String("port", "6379", "Port to listen on")
+	relicaof_flag := flag.String("relicaof", "", "Replica of")
 	flag.Parse()
 
 	if *dir_flag != "" {
@@ -35,6 +36,28 @@ func main() {
 	}
 	if *dbfilename_flag != "" {
 		Config["dbfilename"] = *dbfilename_flag
+	}
+	if *relicaof_flag != "" {
+		Config["role"] = "replica"
+		Config["relicaof"] = *relicaof_flag
+		Config["connected_slaves"] = "0"
+		// Config["master_replid"] = ""
+		// Config["master_repl_offset"] = ""
+		// Config["second_repl_offset"] = ""
+		// Config["repl_backlog_active"] = ""
+		// Config["repl_backlog_size"] = ""
+		// Config["repl_backlog_first_byte_offset"] = ""
+		// Config["repl_backlog_histlen"] = ""
+	} else {
+		Config["role"] = "master"
+		Config["connected_slaves"] = "0"
+		// Config["master_replid"] = ""
+		// Config["master_repl_offset"] = ""
+		// Config["second_repl_offset"] = ""
+		// Config["repl_backlog_active"] = ""
+		// Config["repl_backlog_size"] = ""
+		// Config["repl_backlog_first_byte_offset"] = ""
+		// Config["repl_backlog_histlen"] = ""
 	}
 
 	metadata, databases, err := rdb.Open(Config["dir"], Config["dbfilename"])
@@ -137,7 +160,7 @@ func handle(conn net.Conn) {
 		case "PING":
 			conn.Write(resp.ToSimpleString("PONG"))
 		case "INFO":
-			conn.Write(methods.Info(commands))
+			conn.Write(methods.Info(commands, Config))
 		case "ECHO":
 			conn.Write(methods.Echo(commands))
 		case "SET":
