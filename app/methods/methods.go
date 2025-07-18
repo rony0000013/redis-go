@@ -228,14 +228,9 @@ func Info(commands resp.Value, config map[string]string) []byte {
 		return resp.ToBulkString(
 			"# Replication\n" +
 				"role:" + config["role"] + "\n" +
-				"connected_slaves:" + config["connected_slaves"] + "\n",
-			// "master_replid:" + config["master_replid"] + "\n" +
-			// "master_repl_offset:" + config["master_repl_offset"] + "\n" +
-			// "second_repl_offset:" + config["second_repl_offset"] + "\n" +
-			// "repl_backlog_active:" + config["repl_backlog_active"] + "\n" +
-			// "repl_backlog_size:" + config["repl_backlog_size"] + "\n" +
-			// "repl_backlog_first_byte_offset:" + config["repl_backlog_first_byte_offset"] + "\n" +
-			// "repl_backlog_histlen:" + config["repl_backlog_histlen"] + "\n",
+				"connected_slaves:" + config["connected_slaves"] + "\n" +
+				"master_replid:" + config["master_replid"] + "\n" +
+				"master_repl_offset:" + config["master_repl_offset"] + "\n",
 		)
 	}
 	return resp.ToSimpleString("PONG")

@@ -51,23 +51,13 @@ func main() {
 	if *replicaof_flag != "" {
 		Config["role"] = "slave"
 		Config["connected_slaves"] = "1"
-		// Config["master_replid"] = ""
-		// Config["master_repl_offset"] = ""
-		// Config["second_repl_offset"] = ""
-		// Config["repl_backlog_active"] = ""
-		// Config["repl_backlog_size"] = ""
-		// Config["repl_backlog_first_byte_offset"] = ""
-		// Config["repl_backlog_histlen"] = ""
+		Config["master_replid"] = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+		Config["master_repl_offset"] = "0"
 	} else {
 		Config["role"] = "master"
 		Config["connected_slaves"] = "0"
-		// Config["master_replid"] = ""
-		// Config["master_repl_offset"] = ""
-		// Config["second_repl_offset"] = ""
-		// Config["repl_backlog_active"] = ""
-		// Config["repl_backlog_size"] = ""
-		// Config["repl_backlog_first_byte_offset"] = ""
-		// Config["repl_backlog_histlen"] = ""
+		Config["master_replid"] = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+		Config["master_repl_offset"] = "0"
 	}
 	l, err := net.Listen("tcp", "0.0.0.0:"+*port_flag)
 	if err != nil {
