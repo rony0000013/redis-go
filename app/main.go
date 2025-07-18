@@ -56,7 +56,7 @@ func main() {
 		Config["connected_slaves"] = "1"
 		Config["master_replid"] = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
 		Config["master_repl_offset"] = "0"
-		conn, err := net.Dial("tcp", *replicaof_flag)
+		conn, err := net.Dial("tcp", Config["master_host"]+":"+Config["master_port"])
 		if err != nil {
 			fmt.Println("Failed to connect to master: ", err.Error())
 			os.Exit(1)
